@@ -198,7 +198,7 @@ def create_callbacks(model, training_model, prediction_model, validation_generat
         patience = 2,
         verbose  = 1,
         mode     = 'auto',
-        epsilon  = 0.0001,
+        min_delta  = 0.0001,
         cooldown = 0,
         min_lr   = 0
     ))
@@ -224,13 +224,13 @@ def create_generators(args, preprocess_image):
     # create random transform generator for augmenting training data
     if args.random_transform:
         transform_generator = random_transform_generator(
-            min_rotation=-0.1,
-            max_rotation=0.1,
-            min_translation=(-0.1, -0.1),
-            max_translation=(0.1, 0.1),
+            min_rotation=-0.2,
+            max_rotation=0.2,
+            min_translation=(-0.2, -0.2),
+            max_translation=(0.2, 0.2),
             min_shear=-0.1,
             max_shear=0.1,
-            min_scaling=(0.9, 0.9),
+            min_scaling=(0.8, 0.8),
             max_scaling=(1.1, 1.1),
             flip_x_chance=0.5,
             flip_y_chance=0.5,
@@ -392,12 +392,12 @@ def parse_args(args):
     group.add_argument('--no-weights',        help='Don\'t initialize the model with any weights.', dest='imagenet_weights', action='store_const', const=False)
 
     parser.add_argument('--backbone',         help='Backbone model used by retinanet.', default='resnet50', type=str)
-    parser.add_argument('--batch-size',       help='Size of the batches.', default=1, type=int)
+    parser.add_argument('--batch-size',       help='Size of the batches.', default=2, type=int)
     parser.add_argument('--gpu',              help='Id of the GPU to use (as reported by nvidia-smi).')
     parser.add_argument('--multi-gpu',        help='Number of GPUs to use for parallel processing.', type=int, default=0)
     parser.add_argument('--multi-gpu-force',  help='Extra flag needed to enable (experimental) multi-gpu support.', action='store_true')
-    parser.add_argument('--epochs',           help='Number of epochs to train.', type=int, default=50)
-    parser.add_argument('--steps',            help='Number of steps per epoch.', type=int, default=10000)
+    parser.add_argument('--epochs',           help='Number of epochs to train.', type=int, default=1)
+    parser.add_argument('--steps',            help='Number of steps per epoch.', type=int, default=18000)
     parser.add_argument('--snapshot-path',    help='Path to store snapshots of models during training (defaults to \'./snapshots\')', default='./snapshots')
     parser.add_argument('--tensorboard-dir',  help='Log directory for Tensorboard output', default='./logs')
     parser.add_argument('--no-snapshots',     help='Disable saving snapshots.', dest='snapshots', action='store_false')
