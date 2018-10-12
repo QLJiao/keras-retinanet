@@ -24,7 +24,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 keras.backend.tensorflow_backend.set_session(get_session())
 
 def detect(model_name, score_threshold):
-    model_path = os.path.join('.', 'snapshots', model_name+'_pascal_01.h5')
+    model_path = os.path.join('.', 'snapshots', model_name+'_pascal_01_7903.h5')
     model = models.load_model(model_path, backbone_name=model_name, convert=True)
 
     # load label to names mapping for visualization purposes
@@ -36,7 +36,7 @@ def detect(model_name, score_threshold):
         for img_name in test_file:
             test_list.append(img_name)
 
-    result_path = '/home/ustc/jql/keras-retinanet/'+model_name
+    result_path = '/home/ustc/jql/x-ray/'+model_name
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
