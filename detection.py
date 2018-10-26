@@ -67,7 +67,7 @@ def detect(model_name, score_threshold):
                 break
 
             color = label_color(label)
-
+            box
             b = box.astype(int)
             draw_box(draw, b, color=color, thickness=10)
 
