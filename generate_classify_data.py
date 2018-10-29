@@ -27,7 +27,7 @@ def get_session():
     config.gpu_options.allow_growth = True
     return tf.Session(config=config)
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 # set the modified tf session as backend in keras
 keras.backend.tensorflow_backend.set_session(get_session())
 
@@ -82,7 +82,7 @@ def __parse_annotations(xml_root):
 def load_annotations(image_name):
     """ Load annotations for an image_index.
     """
-    filename = image_name + '.xml'
+    filename = image_name.strip('\n') + '.xml'
     try:
         tree = ET.parse(os.path.join('/home/ustc/jql/VOCdevkit2007/VOC2007', 'Annotations', filename))
         return __parse_annotations(tree.getroot())
@@ -95,8 +95,8 @@ def load_annotations(image_name):
 def compute_annotations(
     anchors,
     annotations,
-    negative_overlap=0.4,
-    positive_overlap=0.5
+    negative_overlap=0.2,
+    positive_overlap=0.3
 ):
     """ Obtain indices of gt annotations with the greatest overlap.
 
@@ -118,7 +118,7 @@ def compute_annotations(
 
     # assign "dont care" labels
     positive_indices = max_overlaps >= positive_overlap
-    negative_indices = (max_overlaps < negative_overlap) & ~positive_indices
+    negative_indices = max_overlaps < negative_overlap
 
     return positive_indices, negative_indices
 
@@ -146,8 +146,9 @@ def detect(model_name, dataset, score_threshold):
     p_count = 0
     n_count = 0
     for img_name in test_list:
-        img_path = img_path + img_name.strip('\n') + '.jpg'
-        image = read_image_bgr(img_path)
+        img_file = img_path + img_name.strip('\n') + '.jpg'
+        # print(img_file)
+        image = read_image_bgr(img_file)
         gt_boxes = load_annotations(img_name)
 
         # copy to draw on
@@ -161,6 +162,7 @@ def detect(model_name, dataset, score_threshold):
         # process image
         start = time.time()
         boxes, scores, labels = model.predict_on_batch(np.expand_dims(image, axis=0))
+        # print(boxes)
         print("processing time: ", time.time() - start)
 
         # correct for image scale
@@ -171,22 +173,29 @@ def detect(model_name, dataset, score_threshold):
         for box, score, label in zip(boxes[0], scores[0], labels[0]):
             # scores are sorted so we can break
             if score < score_threshold:
-                continue
+                break
             th_boxes.append(box)
             b = box.astype(int)
-            h = b[3]-b[2]
-            w = b[1]-b[0]
-            roi = draw[b[2]-h:b[3]+h,b[0]-w:b[1]+w].copy()
+            roi = draw[b[1]:b[3]+1,b[0]:b[2]+1].copy()
             img_rois.append(roi)
-
-        th_boxes = np.array(th_boxes)
+        th_boxes = np.reshape(th_boxes, (-1,4))
+        print(th_boxes)
         positive_indices, negative_indices = compute_annotations(th_boxes.astype(np.float64), gt_boxes.astype(np.float64))
-        for item in positive_indices:
-            cv2.imwrite(positive_path+'/'+str(p_count)+'.jpg', img_rois[item])
-            p_count += 1
 
-        for item in negative_indices:
-            cv2.imwrite(negative_path+'/'+str(p_count)+'.jpg', img_rois[item])
-            n_count += 1
+        for index, item in enumerate(positive_indices):
+            if(item):
+                cv2.imwrite(positive_path+'/'+str(p_count)+'.jpg', img_rois[index])
+                p_count += 1
+
+        for index, item in enumerate(negative_indices):
+            if(item):
+                cv2.imwrite(negative_path + '/' + str(p_count) + '.jpg', img_rois[index])
+                n_count += 1
 
     return
+
+
+if __name__ == '__main__':
+    detect('resnet152', 'test', 0.05)
+    detect('resnet152', 'train', 0.05)
+    detect('resnet152', 'val', 0.05)
