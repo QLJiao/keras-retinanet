@@ -95,8 +95,8 @@ def load_annotations(image_name):
 def compute_annotations(
     anchors,
     annotations,
-    negative_overlap=0.2,
-    positive_overlap=0.3
+    negative_overlap=0.3,
+    positive_overlap=0.4
 ):
     """ Obtain indices of gt annotations with the greatest overlap.
 
