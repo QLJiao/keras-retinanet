@@ -27,9 +27,45 @@ def get_session():
     config.gpu_options.allow_growth = True
     return tf.Session(config=config)
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 # set the modified tf session as backend in keras
 keras.backend.tensorflow_backend.set_session(get_session())
+
+
+def nms(dets, thresh):
+    # boxes 位置
+    x1 = dets[:, 0]
+    y1 = dets[:, 1]
+    x2 = dets[:, 2]
+    y2 = dets[:, 3]
+    # boxes scores
+    scores = dets[:, 4]
+
+    areas = (x2 - x1 + 1) * (y2 - y1 + 1) # 各 box 的面积
+    order = scores.argsort()[::-1] # boxes 的按照 score 排序
+
+    keep = [] # 记录保留下的 boxes
+    while order.size > 0:
+        i = order[0] # score 最大的 box 对应的 index
+        keep.append(i) # 将本轮 score 最大的 box 的 index 保留
+
+        # 计算剩余 boxes 与当前 box 的重叠程度 IoU
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+
+        w = np.maximum(0.0, xx2 - xx1 + 1) # IoU
+        h = np.maximum(0.0, yy2 - yy1 + 1)
+        inter = w * h
+        ovr = inter / (areas[i] + areas[order[1:]] - inter)
+
+        # 保留 IoU 小于设定阈值的 boxes
+        inds = np.where(ovr <= thresh)[0]
+        order = order[inds + 1]
+
+    return keep
+
 
 def _findNode(parent, name, debug_name=None, parse=None):
     if debug_name is None:
