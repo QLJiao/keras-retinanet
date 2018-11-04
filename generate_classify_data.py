@@ -14,6 +14,7 @@ import os
 import numpy as np
 import time
 import tensorflow as tf
+from keras_retinanet.bin.classify import train
 
 from six import raise_from
 try:
@@ -39,27 +40,25 @@ def nms(dets, thresh):
     x2 = dets[:, 2]
     y2 = dets[:, 3]
     # boxes scores
-
-    areas = (x2 - x1 + 1) * (y2 - y1 + 1) # 各 box 的面积
-    # order = scores.argsort()[::-1] # boxes 的按照 score 排序
+    order = np.arange(dets.shape[0])
+    areas = np.multiply((x2 - x1 + 1), (y2 - y1 + 1)) # 各 box 的面积
     keep = [] # 记录保留下的 boxes
-    i = 0
-    while i < dets.size:
-        keep.append(dets[i])
+    while order.size > 0:
+        keep.append(dets[order[0]])
         # 计算剩余 boxes 与当前 box 的重叠程度 IoU
-        xx1 = np.maximum(x1[i], x1[i+1:])
-        yy1 = np.maximum(y1[i], y1[i+1:])
-        xx2 = np.minimum(x2[i], x2[i+1:])
-        yy2 = np.minimum(y2[i], y2[i+1:])
+        xx1 = np.maximum(x1[order[0]], x1[order[1:]])
+        yy1 = np.maximum(y1[order[0]], y1[order[1:]])
+        xx2 = np.minimum(x2[order[0]], x2[order[1:]])
+        yy2 = np.minimum(y2[order[0]], y2[order[1:]])
 
         w = np.maximum(0.0, xx2 - xx1 + 1)
         h = np.maximum(0.0, yy2 - yy1 + 1)
-        inter = w * h
-        ovr = inter / (areas[i] + areas[i+1:] - inter)
+        inter = np.multiply(w, h)
+        ovr = inter / (areas[order[0]] + areas[order[1:]] - inter)
 
         # 保留 IoU 小于设定阈值的 boxes
         inds = np.where(ovr <= thresh)[0]
-        i = inds + 1
+        order = order[inds + 1]
 
     return keep
 
@@ -128,8 +127,8 @@ def load_annotations(image_name):
 def compute_annotations(
     anchors,
     annotations,
-    negative_overlap=0.3,
-    positive_overlap=0.4
+    negative_overlap=0.25,
+    positive_overlap=0.5
 ):
     """ Obtain indices of gt annotations with the greatest overlap.
 
@@ -211,24 +210,24 @@ def detect(model_name, dataset, score_threshold):
             b = box.astype(int)
             roi = draw[b[1]:b[3]+1,b[0]:b[2]+1].copy()
             img_rois.append(roi)
-        th_boxes = np.reshape(th_boxes, (-1,4))
-        print(th_boxes)
+
+        th_boxes = np.reshape(th_boxes, (-1, 4))
         positive_indices, negative_indices = compute_annotations(th_boxes.astype(np.float64), gt_boxes.astype(np.float64))
 
-        for index, item in enumerate(positive_indices):
+        for index_n, item in enumerate(negative_indices):
             if(item):
-                cv2.imwrite(positive_path+'/'+str(p_count)+'.jpg', img_rois[index])
-                p_count += 1
-
-        for index, item in enumerate(negative_indices):
-            if(item):
-                cv2.imwrite(negative_path + '/' + str(p_count) + '.jpg', img_rois[index])
+                cv2.imwrite(negative_path + '/' + str(n_count) + '.jpg', img_rois[index_n])
                 n_count += 1
-
+        for index_p, item in enumerate(positive_indices):
+            if(item):
+                cv2.imwrite(positive_path+'/'+str(p_count)+'.jpg', img_rois[index_p])
+                p_count += 1
+        print(n_count)
+        print(p_count)
     return
 
 
 if __name__ == '__main__':
-    detect('resnet152', 'test', 0.05)
-    detect('resnet152', 'train', 0.05)
-    detect('resnet152', 'val', 0.05)
+    detect('resnet152', 'train', 0.1)
+    detect('resnet152', 'test', 0.1)
+    detect('resnet152', 'val', 0.1)

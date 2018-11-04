@@ -11,6 +11,7 @@ from keras.layers import Dense, GlobalAveragePooling2D, LeakyReLU
 from keras import backend as K
 from keras.preprocessing import image
 from keras.applications.nasnet import preprocess_input
+from keras.preprocessing.image import ImageDataGenerator
 
 def get_session():
     config = tf.ConfigProto()
@@ -24,47 +25,29 @@ keras.backend.tensorflow_backend.set_session(get_session())
 dataset_path = '/home/ustc/jql/x-ray/'
 
 
-def img_generator(root_path, dataset, batch_size=4):
-    positive_names = glob.glob(dataset_path + dataset + '/positive/' + '*.jpg')
-    negative_names = glob.glob(dataset_path + dataset + '/negative/' + '*.jpg')
-    p_count = len(positive_names)
-    n_count = len(negative_names)
-    while True:
-        p_i = random.randint(0, p_count - 1)
-        img1 = image.load_img(positive_names[p_i],target_size=(331,331))
-        img1 = image.img_to_array(img1)
-        img1 = np.expand_dims(img1, axis=0)
-        x = img1
+def focal_loss(y_true, y_pred):
+    gamma = 2.0
+    alpha = 0.5
+    pt1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+    pt0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
+    return -K.sum(alpha * K.pow(1. -pt1, gamma) * K.log(pt1)) - K.sum(
+        (1 - alpha) * K.pow(pt0, gamma) * K.log(1. -pt0))
 
-        p_i = random.randint(0, p_count - 1)
-        img2 = image.load_img(positive_names[p_i], target_size=(331, 331))
-        img2 = image.img_to_array(img2)
-        img2 = np.expand_dims(img2, axis=0)
-        x = np.append(x, img2, axis=0)
 
-        p_i = random.randint(0, p_count - 1)
-        img3 = image.load_img(positive_names[p_i], target_size=(331, 331))
-        img3 = image.img_to_array(img3)
-        img3 = np.expand_dims(img3, axis=0)
-        x = np.append(x, img3, axis=0)
+def train(lr=1e-5, batch=4, epoch=1):
+    train_flow = ImageDataGenerator()
+    train_generator = train_flow.flow_from_directory(dataset_path+'train', target_size=(299, 299), batch_size=batch)
+    num_train = train_generator.samples
+    print(num_train)
+    print(train_generator.class_indices)
 
-        n_i = random.randint(0, n_count - 1)
-        img4 = image.load_img(positive_names[p_i], target_size=(331, 331))
-        img4 = image.img_to_array(img4)
-        img4 = np.expand_dims(img4, axis=0)
-        x = np.append(x, img4, axis=0)
+    val_flow = ImageDataGenerator()
+    val_generator = val_flow.flow_from_directory(dataset_path+'val', target_size=(299, 299),batch_size=batch)
+    num_val = val_generator.samples
 
-        x = preprocess_input(x)
-        y = np.array([1,1,1,0])
-        y.reshape((4, 1))
-
-        yield x, y
-
-def train(lr = 1e-5, steps = 20000):
     base_model = InceptionResNetV2(weights='imagenet', include_top=False, pooling='avg')
     x = base_model.output
-    x = Dense(1000, activation='relu')(x)
-    prediction = Dense(1, activation='sigmoid')(x)
+    prediction = Dense(2, activation='softmax')(x)
 
     model = Model(inputs=base_model.input, outputs=prediction)
 
@@ -72,10 +55,13 @@ def train(lr = 1e-5, steps = 20000):
         layer.trainable = True
 
     adam = keras.optimizers.Adam(lr=lr)
-    model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc'])
-    model.fit_generator(img_generator(dataset_path, 'train'), steps_per_epoch=steps, verbose=1,
-                        validation_data=img_generator(dataset_path, 'val'), validation_steps=200)
-    model.save('../../../classify.h5')
+    model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['acc'])
+
+    checkpoint = keras.callbacks.ModelCheckpoint(dataset_path+'classify_new.h5', monitor='val_loss', verbose=1, save_best_only=True)
+    early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss')
+    model.fit_generator(train_generator, steps_per_epoch=num_train/batch, verbose=1, epochs=epoch,
+                        validation_data=val_generator, validation_steps=num_val,
+                        callbacks=[checkpoint, early_stopping], shuffle=True)
 
 if __name__ == '__main__':
-    train(lr=1e-4, steps=20000)
+    train(lr=1e-5, batch=4, epoch=5)
