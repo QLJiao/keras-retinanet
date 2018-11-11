@@ -1,5 +1,4 @@
 import keras
-
 # import keras_retinanet
 from keras_retinanet import models
 from keras.preprocessing import image
@@ -25,12 +24,14 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 # set the modified tf session as backend in keras
 keras.backend.tensorflow_backend.set_session(get_session())
 
+dataset_path = '/home/ustc/jql/x-ray/'
+
 def detect(model_name, score_threshold, classify=True):
     model_path = os.path.join('.', 'snapshots', model_name+'_pascal_01_7903.h5')
     model = models.load_model(model_path, backbone_name=model_name, convert=True)
 
     if classify:
-        classify_model_path = os.path.join('..', 'classify_new.h5')
+        classify_model_path = os.path.join(dataset_path, 'classify_new.h5')
         model_classify = keras.models.load_model(classify_model_path)
 
     test_img_path = '/home/ustc/jql/VOCdevkit2007/VOC2007/JPEGImages/'
@@ -83,14 +84,18 @@ def detect(model_name, score_threshold, classify=True):
         for box in nodule_boxes:
             b = box.astype(int)
             if classify:
-                roi = draw[b[1]:b[3] + 1, b[0]:b[2] + 1].copy()
-                roi = cv2.resize(roi, (299, 299))
-                roi = np.expand_dims(roi, axis=0)
-                roi = preprocess_input(roi)
-                pred = model_classify.predict(roi)
-                print(pred)
-                if pred[0, 1] > pred[0, 0]:
-                    draw_box(draw, b, color=color, thickness=10)
+                w = b[2] - b[0]
+                h = b[3] - b[1]
+                roi = draw[b[1]-h:b[3] + h, b[0]-w:b[2] + w].copy()
+                size = roi.size
+                if size > 0:
+                    roi = cv2.resize(roi, (299, 299))
+                    roi = np.expand_dims(roi, axis=0)
+                    pred = model_classify.predict(roi)
+                    if pred[0, 1] > 0.4:
+                        print(pred)
+                        draw_box(draw, b, color=color, thickness=10)
+
             else:
                 draw_box(draw, b, color=color, thickness=10)
         print("processing time: ", time.time() - start)

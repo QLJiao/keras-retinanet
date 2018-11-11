@@ -22,8 +22,6 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 # set the modified tf session as backend in keras
 keras.backend.tensorflow_backend.set_session(get_session())
 
-dataset_path = '/home/ustc/jql/x-ray/'
-
 
 def focal_loss(y_true, y_pred):
     gamma = 2.0
@@ -34,34 +32,33 @@ def focal_loss(y_true, y_pred):
         (1 - alpha) * K.pow(pt0, gamma) * K.log(1. -pt0))
 
 
-def train(lr=1e-5, batch=4, epoch=1):
-    train_flow = ImageDataGenerator()
-    train_generator = train_flow.flow_from_directory(dataset_path+'train', target_size=(299, 299), batch_size=batch)
+def train(dataset, base_model, lr=1e-5, batch=4, epoch=1):
+    train_flow = ImageDataGenerator(rotation_range=20, width_shift_range=0.1,
+                                    height_shift_range=0.1, zoom_range=0.2)
+    train_generator = train_flow.flow_from_directory(dataset+'train', target_size=(299, 299), batch_size=batch)
     num_train = train_generator.samples
     print(num_train)
     print(train_generator.class_indices)
 
     val_flow = ImageDataGenerator()
-    val_generator = val_flow.flow_from_directory(dataset_path+'val', target_size=(299, 299),batch_size=batch)
+    val_generator = val_flow.flow_from_directory(dataset+'val', target_size=(299, 299),batch_size=batch)
     num_val = val_generator.samples
 
-    base_model = InceptionResNetV2(weights='imagenet', include_top=False, pooling='avg')
     x = base_model.output
     prediction = Dense(2, activation='softmax')(x)
 
     model = Model(inputs=base_model.input, outputs=prediction)
 
-    for layer in base_model.layers:
-        layer.trainable = True
-
     adam = keras.optimizers.Adam(lr=lr)
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['acc'])
 
-    checkpoint = keras.callbacks.ModelCheckpoint(dataset_path+'classify_new.h5', monitor='val_loss', verbose=1, save_best_only=True)
+    checkpoint = keras.callbacks.ModelCheckpoint(dataset+'classify_new.h5', monitor='val_loss', verbose=1, save_best_only=True)
     early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss')
-    model.fit_generator(train_generator, steps_per_epoch=num_train/batch, verbose=1, epochs=epoch,
+    model.fit_generator(train_generator, steps_per_epoch=num_train, verbose=1, epochs=epoch,
                         validation_data=val_generator, validation_steps=num_val,
                         callbacks=[checkpoint, early_stopping], shuffle=True)
 
 if __name__ == '__main__':
-    train(lr=1e-5, batch=4, epoch=5)
+    dataset_path = '/home/ustc/jql/x-ray/'+'content_size2/'
+    base_model = InceptionResNetV2(weights='imagenet', include_top=False, pooling='avg')
+    train(dataset=dataset_path, base_model=base_model, lr=1e-5, batch=8, epoch=5)

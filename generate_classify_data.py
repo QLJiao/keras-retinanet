@@ -1,7 +1,7 @@
 import keras
-
 # import keras_retinanet
 from keras_retinanet import models
+from keras.applications.inception_resnet_v2 import InceptionResNetV2
 from keras_retinanet.utils.image import read_image_bgr, preprocess_image, resize_image
 from keras_retinanet.utils.visualization import draw_box, draw_caption
 from keras_retinanet.utils.colors import label_color
@@ -29,7 +29,6 @@ def get_session():
     return tf.Session(config=config)
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-# set the modified tf session as backend in keras
 keras.backend.tensorflow_backend.set_session(get_session())
 
 
@@ -76,6 +75,7 @@ def _findNode(parent, name, debug_name=None, parse=None):
         except ValueError as e:
             raise_from(ValueError('illegal value for \'{}\': {}'.format(debug_name, e)), None)
     return result
+
 
 def __parse_annotation(element):
     """ Parse an annotation given an XML element.
@@ -127,7 +127,7 @@ def load_annotations(image_name):
 def compute_annotations(
     anchors,
     annotations,
-    negative_overlap=0.25,
+    negative_overlap=0.2,
     positive_overlap=0.5
 ):
     """ Obtain indices of gt annotations with the greatest overlap.
@@ -154,7 +154,8 @@ def compute_annotations(
 
     return positive_indices, negative_indices
 
-def detect(model_name, dataset, score_threshold):
+
+def create_dataset(model_name, dataset='train', score_threshold=0.1, content_size=1):
     model_path = os.path.join('.', 'snapshots', model_name+'_pascal_01_7903.h5')
     model = models.load_model(model_path, backbone_name=model_name, convert=True)
 
@@ -167,7 +168,7 @@ def detect(model_name, dataset, score_threshold):
         for img_name in test_file:
             test_list.append(img_name)
 
-    result_path = '/home/ustc/jql/x-ray/'+dataset
+    result_path = '/home/ustc/jql/x-ray/'+'content_size'+str(content_size)+'/'+dataset
     negative_path = result_path+'/negative'
     positive_path = result_path+'/positive'
     if not os.path.exists(result_path):
@@ -208,7 +209,13 @@ def detect(model_name, dataset, score_threshold):
                 break
             th_boxes.append(box)
             b = box.astype(int)
-            roi = draw[b[1]:b[3]+1,b[0]:b[2]+1].copy()
+            w = b[2]-b[0]
+            h = b[3]-b[1]
+            y_start = max(b[1]-content_size*h, 0)
+            y_end = min(b[3]+content_size*h, draw.shape[0])
+            x_start = max(b[0]-content_size*w, 0)
+            x_end = min(b[2]+content_size*w, draw.shape[1])
+            roi = draw[y_start: y_end, x_start: x_end].copy()
             img_rois.append(roi)
 
         th_boxes = np.reshape(th_boxes, (-1, 4))
@@ -228,6 +235,9 @@ def detect(model_name, dataset, score_threshold):
 
 
 if __name__ == '__main__':
-    detect('resnet152', 'train', 0.1)
-    detect('resnet152', 'test', 0.1)
-    detect('resnet152', 'val', 0.1)
+    data_path = '/home/ustc/jql/x-ray/content_size0/'
+    create_dataset('resnet152', 'train', score_threshold=0.1, content_size=0)
+    create_dataset('resnet152', 'val', score_threshold=0.1, content_size=0)
+    create_dataset('resnet152', 'test', score_threshold=0.1, content_size=0)
+    base_model = InceptionResNetV2(weights='imagenet', include_top=False, pooling='avg')
+    train(dataset=data_path, base_model=base_model, lr=1e-5, batch=8, epoch=5)
