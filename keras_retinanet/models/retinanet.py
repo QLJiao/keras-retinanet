@@ -50,6 +50,8 @@ def default_classification_model(
         inputs  = keras.layers.Input(shape=(pyramid_feature_size, None, None))
     else:
         inputs  = keras.layers.Input(shape=(None, None, pyramid_feature_size))
+
+    reg_result = keras.layers.Input(shape=(None, 4))
     outputs = inputs
     for i in range(4):
         outputs = keras.layers.Conv2D(
@@ -63,7 +65,7 @@ def default_classification_model(
 
     outputs = keras.layers.Conv2D(
         filters=num_classes * num_anchors,
-        kernel_initializer=keras.initializers.zeros(),
+        # kernel_initializer=keras.initializers.zeros(),
         bias_initializer=initializers.PriorProbability(probability=prior_probability),
         name='pyramid_classification',
         **options
@@ -73,9 +75,15 @@ def default_classification_model(
     if keras.backend.image_data_format() == 'channels_first':
         outputs = keras.layers.Permute((2, 3, 1), name='pyramid_classification_permute')(outputs)
     outputs = keras.layers.Reshape((-1, num_classes), name='pyramid_classification_reshape')(outputs)
+    outputs = keras.layers.Concatenate(axis=-1)([outputs, reg_result])
+    outputs = keras.layers.Conv1D(filters=10, kernel_size=1, strides=1)(outputs)
+    outputs = keras.layers.Activation('tanh')(outputs)
+    # outputs = keras.layers.LeakyReLU(alpha=0.1)(outputs)
+    outputs = keras.layers.Conv1D(filters=1, kernel_size=1, strides=1)(outputs)
     outputs = keras.layers.Activation('sigmoid', name='pyramid_classification_sigmoid')(outputs)
+    print(outputs.shape)
 
-    return keras.models.Model(inputs=inputs, outputs=outputs, name=name)
+    return keras.models.Model(inputs=[inputs, reg_result], outputs=outputs, name=name)
 
 
 def default_regression_model(num_anchors, pyramid_feature_size=256, regression_feature_size=256, name='regression_submodel'):
@@ -118,6 +126,7 @@ def default_regression_model(num_anchors, pyramid_feature_size=256, regression_f
     if keras.backend.image_data_format() == 'channels_first':
         outputs = keras.layers.Permute((2, 3, 1), name='pyramid_regression_permute')(outputs)
     outputs = keras.layers.Reshape((-1, 4), name='pyramid_regression_reshape')(outputs)
+    print(outputs.shape)
 
     return keras.models.Model(inputs=inputs, outputs=outputs, name=name)
 
@@ -172,8 +181,9 @@ def default_submodels(num_classes, num_anchors):
     Returns
         A list of tuple, where the first element is the name of the submodel and the second element is the submodel itself.
     """
+    reg_model = default_regression_model(num_anchors)
     return [
-        ('regression', default_regression_model(num_anchors)),
+        ('regression', reg_model),
         ('classification', default_classification_model(num_classes, num_anchors))
     ]
 
@@ -203,6 +213,22 @@ def __build_pyramid(models, features):
         A list of tensors, one for each submodel.
     """
     return [__build_model_pyramid(n, m, features) for n, m in models]
+
+
+def _build_my(models, features):
+    reg_model_list = []
+    for n, m in models:
+        if n == 'regression':
+            for f in features:
+                reg_model_list.append(m(f))
+            reg_model = keras.layers.Concatenate(axis=1, name=n)(reg_model_list)
+        else:
+            cls_model_list = []
+            for index, f in enumerate(features):
+                cls_model_list.append(m([f, reg_model_list[index]]))
+            cls_model = keras.layers.Concatenate(axis=1, name=n)(cls_model_list)
+
+    return [reg_model, cls_model]
 
 
 def __build_anchors(anchor_parameters, features):
@@ -277,7 +303,8 @@ def retinanet(
     features = create_pyramid_features(C3, C4, C5)
 
     # for all pyramid levels, run available submodels
-    pyramids = __build_pyramid(submodels, features)
+    # pyramids = __build_pyramid(submodels, features)
+    pyramids = _build_my(submodels, features)
 
     return keras.models.Model(inputs=inputs, outputs=pyramids, name=name)
 

@@ -26,28 +26,19 @@ keras.backend.tensorflow_backend.set_session(get_session())
 
 dataset_path = '/home/ustc/jql/x-ray/'
 
-def detect(model_name, score_threshold, classify=True):
-    model_path = os.path.join('.', 'snapshots', model_name+'_pascal_01_7903.h5')
-    model = models.load_model(model_path, backbone_name=model_name, convert=True)
+def detect(cross_id, score_threshold):
+    model_path = os.path.join('.', 'snapshots', 'resnet152_' + str(cross_id) + '_pascal'+'.h5')
+    model = models.load_model(model_path, backbone_name='resnet152', convert=True)
 
-    if classify:
-        classify_model_path = os.path.join(dataset_path, 'classify_new.h5')
-        model_classify = keras.models.load_model(classify_model_path)
-
-    test_img_path = '/home/ustc/jql/VOCdevkit2007/VOC2007/JPEGImages/'
+    test_img_path = '/home/ustc/jql/JSRT/JPEGImages/'
     test_list = []
-    with open('/home/ustc/jql/VOCdevkit2007/VOC2007/ImageSets/Layout/test.txt', 'r') as test_file:
+    with open('/home/ustc/jql/JSRT/ImageSets/Main/' + 'test' + str(cross_id) + '.txt', 'r') as test_file:
         for img_name in test_file:
             test_list.append(img_name)
 
-    if classify:
-        result_path = '/home/ustc/jql/x-ray/' + model_name + 'classify_new'
-        if not os.path.exists(result_path):
-            os.makedirs(result_path)
-    else:
-        result_path = '/home/ustc/jql/x-ray/' + model_name
-        if not os.path.exists(result_path):
-            os.makedirs(result_path)
+    result_path = '/home/ustc/jql/x-ray/' + 'jsrt_result'
+    if not os.path.exists(result_path):
+        os.makedirs(result_path)
 
     for img_name in test_list:
         img_path = test_img_path + img_name.strip('\n') + '.jpg'
@@ -56,7 +47,7 @@ def detect(model_name, score_threshold, classify=True):
 
         # copy to draw on
         draw = img.copy()
-        draw = cv2.cvtColor(draw, cv2.COLOR_BGR2RGB)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         start = time.time()
 
         # preprocess image for network
@@ -79,28 +70,32 @@ def detect(model_name, score_threshold, classify=True):
             nodule_boxes.append(box)
 
         nodule_boxes = np.asarray(nodule_boxes)
-        nodule_boxes = nms(nodule_boxes, 0.2)
+        nodule_boxes = nms(nodule_boxes, 0.15)
 
         for box in nodule_boxes:
             b = box.astype(int)
-            if classify:
-                w = b[2] - b[0]
-                h = b[3] - b[1]
-                roi = draw[b[1]-h:b[3] + h, b[0]-w:b[2] + w].copy()
-                size = roi.size
-                if size > 0:
-                    roi = cv2.resize(roi, (299, 299))
-                    roi = np.expand_dims(roi, axis=0)
-                    pred = model_classify.predict(roi)
-                    if pred[0, 1] > 0.4:
-                        print(pred)
-                        draw_box(draw, b, color=color, thickness=10)
-
-            else:
-                draw_box(draw, b, color=color, thickness=10)
+            draw_box(draw, b, color=color, thickness=10)
+        # for box in nodule_boxes:
+        #     b = box.astype(int)
+        #     if classify:
+        #         w = b[2] - b[0]
+        #         h = b[3] - b[1]
+        #         roi = draw[b[1]-h:b[3] + h, b[0]-w:b[2] + w].copy()
+        #         size = roi.size
+        #         if size > 0:
+        #             roi = cv2.resize(roi, (299, 299))
+        #             roi = np.expand_dims(roi, axis=0)
+        #             pred = model_cls.predict(roi)
+        #             if pred[0, 1] > 0.4:
+        #                 print(pred)
+        #                 draw_box(draw, b, color=color, thickness=10)
+        #
+        #     else:
+        #         draw_box(draw, b, color=color, thickness=10)
         print("processing time: ", time.time() - start)
         cv2.imwrite(result_path+'/'+img_name+'.jpg', draw)
     return
 
 if __name__ == '__main__':
-    detect('resnet152', 0.05, classify=True)
+    for cross_id in range(10, 15):
+        detect(cross_id, 0.075)

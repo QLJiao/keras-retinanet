@@ -30,6 +30,16 @@ except ImportError:
 voc_classes = {
     'nodule'   : 0
 }
+# voc_classes = {
+#     'Atelectasis'   : 0,
+#     'Cardiomegaly'  : 1,
+#     'Effusion'      : 2,
+#     'Infiltrate'    : 3,
+#     'Mass'          : 4,
+#     'Nodule'        : 5,
+#     'Pneumonia'     : 6,
+#     'Pneumothorax'  : 7
+# }
 
 
 def _findNode(parent, name, debug_name=None, parse=None):
@@ -57,6 +67,7 @@ class PascalVocGenerator(Generator):
         self,
         data_dir,
         set_name,
+        cross_val_id,
         classes=voc_classes,
         image_extension='.jpg',
         skip_truncated=False,
@@ -72,7 +83,7 @@ class PascalVocGenerator(Generator):
         self.data_dir             = data_dir
         self.set_name             = set_name
         self.classes              = classes
-        self.image_names          = [l.strip().split(None, 1)[0] for l in open(os.path.join(data_dir, 'ImageSets', 'Main', set_name + '.txt')).readlines()]
+        self.image_names          = [l.strip().split(None, 1)[0] for l in open(os.path.join(data_dir, 'ImageSets', 'Main', set_name + str(cross_val_id) + '.txt')).readlines()]
         self.image_extension      = image_extension
         self.skip_truncated       = skip_truncated
         self.skip_difficult       = skip_difficult

@@ -20,7 +20,7 @@ import argparse
 import os
 import sys
 import warnings
-
+import gc
 import keras
 import keras.preprocessing.image
 import tensorflow as tf
@@ -48,6 +48,14 @@ from ..utils.keras_version import check_keras_version
 from ..utils.model import freeze as freeze_model
 from ..utils.transform import random_transform_generator
 
+def get_session():
+    """ Construct a modified tf session.
++
+    """
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    return tf.Session(config=config)
+
 
 def makedirs(path):
     # Intended behavior: try to create the directory,
@@ -58,14 +66,6 @@ def makedirs(path):
     except OSError:
         if not os.path.isdir(path):
             raise
-
-
-def get_session():
-    """ Construct a modified tf session.
-    """
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    return tf.Session(config=config)
 
 
 def model_with_weights(model, weights, skip_mismatch):
@@ -124,16 +124,16 @@ def create_models(backbone_retinanet, num_classes, weights, multi_gpu=0, freeze_
     # compile model
     training_model.compile(
         loss={
-            'regression'    : losses.smooth_l1(),
-            'classification': losses.focal()
+            'regression'    : losses.smooth_l1(sigma=1.5),
+            'classification': losses.focal(alpha=0.5)
         },
-        optimizer=keras.optimizers.adam(lr=1e-5, clipnorm=0.001)
+        optimizer=keras.optimizers.adam(lr=3e-5, clipnorm=0.001)
     )
 
     return model, training_model, prediction_model
 
 
-def create_callbacks(model, training_model, prediction_model, validation_generator, args):
+def create_callbacks(model, training_model, prediction_model, validation_generator, args, cross_val_id):
     """ Creates the callbacks to use during training.
 
     Args
@@ -182,31 +182,35 @@ def create_callbacks(model, training_model, prediction_model, validation_generat
         checkpoint = keras.callbacks.ModelCheckpoint(
             os.path.join(
                 args.snapshot_path,
-                '{backbone}_{dataset_type}_{{epoch:02d}}.h5'.format(backbone=args.backbone, dataset_type=args.dataset_type)
+                # '{backbone}_{cross_id}_{dataset_type}_{{epoch:02d}}.h5'.format(backbone=args.backbone, cross_id=cross_val_id, dataset_type=args.dataset_type)
+                'anyi_{backbone}_{cross_id}_{dataset_type}_{{mAP}}.h5'.format(backbone=args.backbone,
+                                                                               cross_id=cross_val_id,
+                                                                               dataset_type=args.dataset_type)
+
             ),
             verbose=1,
-            # save_best_only=True,
-            # monitor="mAP",
-            # mode='max'
+            save_best_only=True,
+            monitor="mAP",
+            mode='max'
         )
         checkpoint = RedirectModel(checkpoint, model)
         callbacks.append(checkpoint)
 
     callbacks.append(keras.callbacks.ReduceLROnPlateau(
-        monitor  = 'loss',
+        monitor  = 'mAP',
         factor   = 0.1,
         patience = 2,
         verbose  = 1,
-        mode     = 'auto',
+        mode     = 'max',
         min_delta  = 0.0001,
         cooldown = 0,
-        min_lr   = 0
+        min_lr   = 1e-8
     ))
 
     return callbacks
 
 
-def create_generators(args, preprocess_image):
+def create_generators(cross_id, args, preprocess_image):
     """ Create generators for training and validation.
 
     Args
@@ -258,6 +262,7 @@ def create_generators(args, preprocess_image):
         train_generator = PascalVocGenerator(
             args.pascal_path,
             'trainval',
+            cross_val_id=cross_id,
             transform_generator=transform_generator,
             **common_args
         )
@@ -265,6 +270,7 @@ def create_generators(args, preprocess_image):
         validation_generator = PascalVocGenerator(
             args.pascal_path,
             'test',
+            cross_val_id=cross_id,
             **common_args
         )
     elif args.dataset_type == 'csv':
@@ -396,8 +402,8 @@ def parse_args(args):
     parser.add_argument('--gpu',              help='Id of the GPU to use (as reported by nvidia-smi).')
     parser.add_argument('--multi-gpu',        help='Number of GPUs to use for parallel processing.', type=int, default=0)
     parser.add_argument('--multi-gpu-force',  help='Extra flag needed to enable (experimental) multi-gpu support.', action='store_true')
-    parser.add_argument('--epochs',           help='Number of epochs to train.', type=int, default=3)
-    parser.add_argument('--steps',            help='Number of steps per epoch.', type=int, default=1000)
+    parser.add_argument('--epochs',           help='Number of epochs to train.', type=int, default=30)
+    parser.add_argument('--steps',            help='Number of steps per epoch.', type=int, default=1403)
     parser.add_argument('--snapshot-path',    help='Path to store snapshots of models during training (defaults to \'./snapshots\')', default='./snapshots')
     parser.add_argument('--tensorboard-dir',  help='Log directory for Tensorboard output', default='./logs')
     parser.add_argument('--no-snapshots',     help='Disable saving snapshots.', dest='snapshots', action='store_false')
@@ -418,13 +424,6 @@ def main(args=None):
         args = sys.argv[1:]
     args = parse_args(args)
 
-    # create object that stores backbone information
-    backbone = models.backbone(args.backbone)
-
-    # make sure keras is the minimum required version
-    check_keras_version()
-
-    # optionally choose specific GPU
     if args.gpu:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     keras.backend.tensorflow_backend.set_session(get_session())
@@ -433,60 +432,72 @@ def main(args=None):
     if args.config:
         args.config = read_config_file(args.config)
 
-    # create the generators
-    train_generator, validation_generator = create_generators(args, backbone.preprocess_image)
+    for cross_val_id in range(0, 1):
+        # create object that stores backbone information
+        backbone = models.backbone(args.backbone)
 
-    # create the model
-    if args.snapshot is not None:
-        print('Loading model, this may take a second...')
-        model            = models.load_model(args.snapshot, backbone_name=args.backbone)
-        training_model   = model
-        anchor_params    = None
-        if args.config and 'anchor_parameters' in args.config:
-            anchor_params = parse_anchor_parameters(args.config)
-        prediction_model = retinanet_bbox(model=model, anchor_params=anchor_params)
-    else:
-        weights = args.weights
-        # default to imagenet if nothing else is specified
-        if weights is None and args.imagenet_weights:
-            weights = backbone.download_imagenet()
+        # make sure keras is the minimum required version
+        check_keras_version()
 
-        print('Creating model, this may take a second...')
-        model, training_model, prediction_model = create_models(
-            backbone_retinanet=backbone.retinanet,
-            num_classes=train_generator.num_classes(),
-            weights=weights,
-            multi_gpu=args.multi_gpu,
-            freeze_backbone=args.freeze_backbone,
-            config=args.config
+        # optionally choose specific GPU
+
+
+        # create the generators
+        train_generator, validation_generator = create_generators(cross_val_id, args, backbone.preprocess_image)
+
+        # create the model
+        if args.snapshot is not None:
+            print('Loading model, this may take a second...')
+            model = models.load_model(args.snapshot, backbone_name=args.backbone)
+            training_model = model
+            anchor_params = None
+            if args.config and 'anchor_parameters' in args.config:
+                anchor_params = parse_anchor_parameters(args.config)
+            prediction_model = retinanet_bbox(model=model, anchor_params=anchor_params)
+        else:
+            weights = args.weights
+            # default to imagenet if nothing else is specified
+            if weights is None and args.imagenet_weights:
+                weights = backbone.download_imagenet()
+
+            print('Creating model, this may take a second...')
+            model, training_model, prediction_model = create_models(
+                backbone_retinanet=backbone.retinanet,
+                num_classes=train_generator.num_classes(),
+                weights=weights,
+                multi_gpu=args.multi_gpu,
+                freeze_backbone=args.freeze_backbone,
+                config=args.config
+            )
+
+        # print model summary
+        print(model.summary())
+
+        # this lets the generator compute backbone layer shapes using the actual backbone model
+        if 'vgg' in args.backbone or 'densenet' in args.backbone:
+            train_generator.compute_shapes = make_shapes_callback(model)
+            if validation_generator:
+                validation_generator.compute_shapes = train_generator.compute_shapes
+
+        # create the callbacks
+        callbacks = create_callbacks(
+            model,
+            training_model,
+            prediction_model,
+            validation_generator,
+            args,
+            cross_val_id=cross_val_id,
         )
 
-    # print model summary
-    print(model.summary())
-
-    # this lets the generator compute backbone layer shapes using the actual backbone model
-    if 'vgg' in args.backbone or 'densenet' in args.backbone:
-        train_generator.compute_shapes = make_shapes_callback(model)
-        if validation_generator:
-            validation_generator.compute_shapes = train_generator.compute_shapes
-
-    # create the callbacks
-    callbacks = create_callbacks(
-        model,
-        training_model,
-        prediction_model,
-        validation_generator,
-        args,
-    )
-
-    # start training
-    training_model.fit_generator(
-        generator=train_generator,
-        steps_per_epoch=args.steps,
-        epochs=args.epochs,
-        verbose=1,
-        callbacks=callbacks,
-    )
+        # start training
+        training_model.fit_generator(
+            generator=train_generator,
+            steps_per_epoch=args.steps,
+            epochs=args.epochs,
+            verbose=1,
+            callbacks=callbacks,
+        )
+        gc.collect()
 
 
 if __name__ == '__main__':
