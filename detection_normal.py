@@ -26,28 +26,27 @@ keras.backend.tensorflow_backend.set_session(get_session())
 
 dataset_path = '/home/ustc/jql/x-ray/'
 
-def detect(cross_id, score_threshold):
+def detect(score_threshold):
     # model_path = os.path.join('.', 'snapshots', 'model_save', 'resnet152_' + str(cross_id) + '_pascal'+'.h5')
-    # model_path = "/home/ustc/jql/x-ray/keras-retinanet/snapshots/model_save/resnet152_pascal_01_7903.h5"
-    model_path = '/home/ustc/jql/x-ray/keras-retinanet/snapshots/model_save/anyi_resnet152_0_pascal_0.8199.h5'
+    model_path = "/home/ustc/jql/x-ray/keras-retinanet/snapshots/model_save/resnet152_5_pascal.h5"
     model = models.load_model(model_path, backbone_name='resnet152', convert=True)
 
-    # test_img_path = '/home/ustc/jql/JSRT/JPEGImages/'
-    test_img_path = '/home/ustc/jql/VOCdevkit2007/VOC2007/JPEGImages/'
+    test_img_file = '/home/ustc/jql/JSRT/normal.txt'
+    test_img_path = '/home/ustc/jql/JSRT/JPEGImages/'
+
     test_list = []
-    # with open('/home/ustc/jql/JSRT/ImageSets/Main/' + 'test' + str(cross_id) + '.txt', 'r') as test_file:
-    #     for img_name in test_file:
-    #         test_list.append(img_name)
-    with open('/home/ustc/jql/VOCdevkit2007/VOC2007/ImageSets/Main/' + 'test' + str(cross_id) + '.txt', 'r') as test_file:
-        for img_name in test_file:
-            test_list.append(img_name)
-    result_path = '/home/ustc/jql/x-ray/' + 'anyi_no_reg'+str(score_threshold)
+    with open(test_img_file, 'r') as f:
+        for line in f:
+            name = line.split('.')[0]
+            test_list.append(name)
+
+    result_path = '/home/ustc/jql/x-ray/' + 'jsrt_normal'+str(score_threshold)
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
     count = 0
     for img_name in test_list:
-        img_path = test_img_path + img_name.strip('\n') + '.jpg'
+        img_path = test_img_path + img_name+ '.jpg'
         img = read_image_bgr(img_path)
         print(img_name)
 
@@ -85,31 +84,12 @@ def detect(cross_id, score_threshold):
         for box in nodule_boxes:
             b = box.astype(int)
             draw_box(draw, b, color=color, thickness=10)
-        # for box in nodule_boxes:
-        #     b = box.astype(int)
-        #     if classify:
-        #         w = b[2] - b[0]
-        #         h = b[3] - b[1]
-        #         roi = draw[b[1]-h:b[3] + h, b[0]-w:b[2] + w].copy()
-        #         size = roi.size
-        #         if size > 0:
-        #             roi = cv2.resize(roi, (299, 299))
-        #             roi = np.expand_dims(roi, axis=0)
-        #             pred = model_cls.predict(roi)
-        #             if pred[0, 1] > 0.4:
-        #                 print(pred)
-        #                 draw_box(draw, b, color=color, thickness=10)
-        #
-        #     else:
-        #         draw_box(draw, b, color=color, thickness=10)
+
         print("processing time: ", time.time() - start)
         cv2.imwrite(result_path+'/'+img_name+'.jpg', draw)
 
     return count
 
 if __name__ == '__main__':
-    count = 0
-    for cross_id in range(0, 1):
-        count += detect(cross_id, 0.3)
-
+    count = detect(0.2)
     print(count)

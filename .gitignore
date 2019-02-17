@@ -10,3 +10,5 @@ logs
 \.idea/
 
 tests/
+
+*.h5

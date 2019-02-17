@@ -15,7 +15,7 @@ limitations under the License.
 """
 
 from ..preprocessing.generator import Generator
-from ..utils.image import read_image_bgr
+from ..utils.image import read_image_bgr, read_USM
 
 import os
 import numpy as np
@@ -30,16 +30,6 @@ except ImportError:
 voc_classes = {
     'nodule'   : 0
 }
-# voc_classes = {
-#     'Atelectasis'   : 0,
-#     'Cardiomegaly'  : 1,
-#     'Effusion'      : 2,
-#     'Infiltrate'    : 3,
-#     'Mass'          : 4,
-#     'Nodule'        : 5,
-#     'Pneumonia'     : 6,
-#     'Pneumothorax'  : 7
-# }
 
 
 def _findNode(parent, name, debug_name=None, parse=None):
@@ -125,7 +115,8 @@ class PascalVocGenerator(Generator):
         """ Load an image at the image_index.
         """
         path = os.path.join(self.data_dir, 'JPEGImages', self.image_names[image_index] + self.image_extension)
-        return read_image_bgr(path)
+        return read_USM(path)
+        # return read_image_bgr(path)
 
     def __parse_annotation(self, element):
         """ Parse an annotation given an XML element.

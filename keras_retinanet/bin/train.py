@@ -112,10 +112,12 @@ def create_models(backbone_retinanet, num_classes, weights, multi_gpu=0, freeze_
     if multi_gpu > 1:
         from keras.utils import multi_gpu_model
         with tf.device('/cpu:0'):
-            model = model_with_weights(backbone_retinanet(num_classes, num_anchors=num_anchors, modifier=modifier), weights=weights, skip_mismatch=True)
+            model = model_with_weights(backbone_retinanet(num_classes, num_anchors=num_anchors, modifier=modifier),
+                                       weights=weights, skip_mismatch=True)
         training_model = multi_gpu_model(model, gpus=multi_gpu)
     else:
-        model          = model_with_weights(backbone_retinanet(num_classes, num_anchors=num_anchors, modifier=modifier), weights=weights, skip_mismatch=True)
+        model          = model_with_weights(backbone_retinanet(num_classes, num_anchors=num_anchors, modifier=modifier),
+                                            weights=weights, skip_mismatch=True)
         training_model = model
 
     # make prediction model
@@ -124,10 +126,10 @@ def create_models(backbone_retinanet, num_classes, weights, multi_gpu=0, freeze_
     # compile model
     training_model.compile(
         loss={
-            'regression'    : losses.smooth_l1(sigma=1.5),
-            'classification': losses.focal(alpha=0.5)
+            'regression'    : losses.smooth_l1(sigma=3.0),
+            'classification': losses.focal(alpha=0.25, gamma=2)
         },
-        optimizer=keras.optimizers.adam(lr=3e-5, clipnorm=0.001)
+        optimizer=keras.optimizers.adam(lr=1e-4, clipnorm=0.001)
     )
 
     return model, training_model, prediction_model
@@ -183,7 +185,7 @@ def create_callbacks(model, training_model, prediction_model, validation_generat
             os.path.join(
                 args.snapshot_path,
                 # '{backbone}_{cross_id}_{dataset_type}_{{epoch:02d}}.h5'.format(backbone=args.backbone, cross_id=cross_val_id, dataset_type=args.dataset_type)
-                'anyi_{backbone}_{cross_id}_{dataset_type}_{{mAP}}.h5'.format(backbone=args.backbone,
+                'anyi_CONCATE_{backbone}_{cross_id}_{dataset_type}_{{mAP}}.h5'.format(backbone=args.backbone,
                                                                                cross_id=cross_val_id,
                                                                                dataset_type=args.dataset_type)
 
@@ -198,8 +200,8 @@ def create_callbacks(model, training_model, prediction_model, validation_generat
 
     callbacks.append(keras.callbacks.ReduceLROnPlateau(
         monitor  = 'mAP',
-        factor   = 0.1,
-        patience = 2,
+        factor   = 0.333,
+        patience = 3,
         verbose  = 1,
         mode     = 'max',
         min_delta  = 0.0001,
@@ -402,7 +404,7 @@ def parse_args(args):
     parser.add_argument('--gpu',              help='Id of the GPU to use (as reported by nvidia-smi).')
     parser.add_argument('--multi-gpu',        help='Number of GPUs to use for parallel processing.', type=int, default=0)
     parser.add_argument('--multi-gpu-force',  help='Extra flag needed to enable (experimental) multi-gpu support.', action='store_true')
-    parser.add_argument('--epochs',           help='Number of epochs to train.', type=int, default=30)
+    parser.add_argument('--epochs',           help='Number of epochs to train.', type=int, default=50)
     parser.add_argument('--steps',            help='Number of steps per epoch.', type=int, default=1403)
     parser.add_argument('--snapshot-path',    help='Path to store snapshots of models during training (defaults to \'./snapshots\')', default='./snapshots')
     parser.add_argument('--tensorboard-dir',  help='Log directory for Tensorboard output', default='./logs')

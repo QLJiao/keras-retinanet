@@ -23,6 +23,15 @@ from PIL import Image
 from .transform import change_transform_origin
 
 
+def read_USM(path):
+    img = cv2.imread(path, 0)
+    img_blur = cv2.GaussianBlur(img, (0, 0), sigmaX=3, sigmaY=3)
+    img_dst = (img.astype("float32") - img_blur.astype("float32") * 0.6) / (1. - 0.6)
+    img_dst = np.maximum(0, img_dst)
+    img_dst = np.minimum(255, img_dst)
+    img_dst = cv2.cvtColor(img_dst, cv2.COLOR_GRAY2BGR)
+    return img_dst
+
 def read_image_bgr(path):
     """ Read an image in BGR format.
 

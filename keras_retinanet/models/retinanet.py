@@ -20,6 +20,10 @@ from .. import layers
 from ..utils.anchors import AnchorParameters
 
 
+def cut_gradient(x):
+    output = keras.backend.stop_gradient(x)
+    return output
+
 def default_classification_model(
     num_classes,
     num_anchors,
@@ -47,11 +51,14 @@ def default_classification_model(
     }
 
     if keras.backend.image_data_format() == 'channels_first':
-        inputs  = keras.layers.Input(shape=(pyramid_feature_size, None, None))
+        inputs = keras.layers.Input(shape=(pyramid_feature_size, None, None))
     else:
-        inputs  = keras.layers.Input(shape=(None, None, pyramid_feature_size))
+        inputs = keras.layers.Input(shape=(None, None, pyramid_feature_size))
 
     reg_result = keras.layers.Input(shape=(None, 4))
+    reg_output = keras.layers.Lambda(cut_gradient, output_shape=(None, 4))(reg_result)
+    # if not keras.backend.is_keras_tensor(reg_output):
+    #     print('不是 keras tensor!!')
     outputs = inputs
     for i in range(4):
         outputs = keras.layers.Conv2D(
@@ -65,23 +72,22 @@ def default_classification_model(
 
     outputs = keras.layers.Conv2D(
         filters=num_classes * num_anchors,
-        # kernel_initializer=keras.initializers.zeros(),
+        kernel_initializer=keras.initializers.zeros(),
         bias_initializer=initializers.PriorProbability(probability=prior_probability),
-        name='pyramid_classification',
+        name='classification',
         **options
     )(outputs)
 
     # reshape output and apply sigmoid
     if keras.backend.image_data_format() == 'channels_first':
         outputs = keras.layers.Permute((2, 3, 1), name='pyramid_classification_permute')(outputs)
-    outputs = keras.layers.Reshape((-1, num_classes), name='pyramid_classification_reshape')(outputs)
-    outputs = keras.layers.Concatenate(axis=-1)([outputs, reg_result])
-    outputs = keras.layers.Conv1D(filters=10, kernel_size=1, strides=1)(outputs)
-    outputs = keras.layers.Activation('tanh')(outputs)
-    # outputs = keras.layers.LeakyReLU(alpha=0.1)(outputs)
+    outputs = keras.layers.Reshape((-1, num_classes), name='classification_reshape')(outputs)
+    reg_output = keras.layers.Conv1D(filters=4, kernel_size=1, strides=1, activation='tanh', name='reg_conv1d')(reg_output)
+    outputs = keras.layers.Concatenate(axis=-1, name='reg_cls_concate')([reg_output, outputs])
+    outputs = keras.layers.Conv1D(filters=10, kernel_size=1, strides=1, activation='tanh', name='concate_conv1d')(outputs)
     outputs = keras.layers.Conv1D(filters=1, kernel_size=1, strides=1)(outputs)
-    outputs = keras.layers.Activation('sigmoid', name='pyramid_classification_sigmoid')(outputs)
-    print(outputs.shape)
+
+    outputs = keras.layers.Activation('sigmoid', name='classification_sigmoid_concate')(outputs)
 
     return keras.models.Model(inputs=[inputs, reg_result], outputs=outputs, name=name)
 
@@ -181,9 +187,9 @@ def default_submodels(num_classes, num_anchors):
     Returns
         A list of tuple, where the first element is the name of the submodel and the second element is the submodel itself.
     """
-    reg_model = default_regression_model(num_anchors)
+    # reg_model = default_regression_model(num_anchors)
     return [
-        ('regression', reg_model),
+        ('regression', default_regression_model(num_anchors)),
         ('classification', default_classification_model(num_classes, num_anchors))
     ]
 
@@ -217,17 +223,18 @@ def __build_pyramid(models, features):
 
 def _build_my(models, features):
     reg_model_list = []
+    cls_model_list = []
     for n, m in models:
         if n == 'regression':
             for f in features:
                 reg_model_list.append(m(f))
-            reg_model = keras.layers.Concatenate(axis=1, name=n)(reg_model_list)
         else:
-            cls_model_list = []
             for index, f in enumerate(features):
-                cls_model_list.append(m([f, reg_model_list[index]]))
-            cls_model = keras.layers.Concatenate(axis=1, name=n)(cls_model_list)
+                reg_output = reg_model_list[index]
+                cls_model_list.append(m([f, reg_output]))
 
+    cls_model = keras.layers.Concatenate(axis=1, name='classification')(cls_model_list)
+    reg_model = keras.layers.Concatenate(axis=1, name='regression')(reg_model_list)
     return [reg_model, cls_model]
 
 

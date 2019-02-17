@@ -45,10 +45,17 @@ The default anchor parameters.
 AnchorParameters.default = AnchorParameters(
     sizes   = [16, 32, 64, 128, 256],
     strides = [8, 16, 32, 64, 128],
-    ratios  = np.array([0.65, 0.8, 1, 1.25, 1.54], keras.backend.floatx()),
+    # ratios  = np.array([0.7, 1, 1.5], keras.backend.floatx()),
+    # scales  = np.array([2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)], keras.backend.floatx()),
+    ratios  = np.array([0.6, 0.8, 1, 1.25, 1.6], keras.backend.floatx()),
     scales  = np.array([2 ** 0, 2 ** (1.0 / 5.0), 2 ** (2.0 / 5.0), 2 ** (3.0 / 5.0), 2 ** (4.0 / 5.0)], keras.backend.floatx()),
 )
-
+# AnchorParameters.default = AnchorParameters(
+#     sizes   = [16, 32, 64, 128, 256],
+#     strides = [8, 16, 32, 64, 128],
+#     ratios  = np.array([0.6, 0.8, 1, 1.2, 1.6], keras.backend.floatx()),
+#     scales  = np.array([2 ** 0, 2 ** (1.0 / 4.0), 2 ** (2.0 / 4.0), 2 ** (3.0 / 4.0)], keras.backend.floatx()),
+# )
 
 def anchor_targets_bbox(
     anchors,
